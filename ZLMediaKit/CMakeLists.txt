@@ -125,12 +125,12 @@ endif ()
 
 
 #测试程序
-add_subdirectory(tests)
+#add_subdirectory(tests)
 
 #主服务器
-add_subdirectory(server)
+#add_subdirectory(server)
 
-add_subdirectory(rtspclient)
+#add_subdirectory(rtspclient)
 
 
 
