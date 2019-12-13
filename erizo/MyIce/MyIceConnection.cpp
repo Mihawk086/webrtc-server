@@ -9,7 +9,7 @@ using namespace erizo;
 erizo::MyIceConnection::MyIceConnection(xop::EventLoop *loop,IceConfig& ice_config)
 :IceConnection(ice_config),m_loop(loop)
 {
-    m_strIp = "192.168.0.102";
+    m_strIp = "192.168.127.128";
     m_nPort = 9500;
     m_ice_server.reset(new IceServer(Utils::Crypto::GetRandomString(4), Utils::Crypto::GetRandomString(24)));
     m_udp_socket.reset(new UdpSocket(m_strIp,m_nPort,loop));

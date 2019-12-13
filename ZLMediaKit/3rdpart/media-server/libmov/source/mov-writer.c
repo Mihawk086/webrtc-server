@@ -175,6 +175,8 @@ void mov_writer_destroy(struct mov_writer_t* writer)
 
 	for (i = 0; i < mov->track_count; i++)
         mov_free_track(mov->tracks + i);
+	if (mov->tracks)
+		free(mov->tracks);
 	free(writer);
 }
 
@@ -224,9 +226,30 @@ static int mov_writer_move(struct mov_t* mov, uint64_t to, uint64_t from, size_t
 
 int mov_writer_write(struct mov_writer_t* writer, int track, const void* data, size_t bytes, int64_t pts, int64_t dts, int flags)
 {
+	return mov_writer_write_l(writer,track,data,bytes,pts,dts,flags,1);
+}
+int mov_writer_write_l(struct mov_writer_t* writer, int track, const void* data_in, size_t bytes, int64_t pts, int64_t dts, int flags , int with_nalu_size)
+{
 	struct mov_t* mov;
 	struct mov_sample_t* sample;
 
+	const void *nalu_size_ptr;
+	const void *data_ptr;
+	char nalu_size_buf[4];
+	if(!with_nalu_size){
+		//Without four bytes of nalu_size, we generate it ourselves
+		nalu_size_buf[0] = (uint8_t)((bytes >> 24) & 0xFF);
+		nalu_size_buf[1] = (uint8_t)((bytes >> 16) & 0xFF);
+		nalu_size_buf[2] = (uint8_t)((bytes >> 8) & 0xFF);
+		nalu_size_buf[3] = (uint8_t)((bytes >> 0) & 0xFF);
+
+		nalu_size_ptr = nalu_size_buf;
+		data_ptr = data_in;
+		bytes += 4;
+	}else{
+		nalu_size_ptr = data_in;
+		data_ptr = (char *)data_in + 4;
+	}
 	if (track < 0 || track >= (int)writer->mov.track_count)
 		return -ENOENT;
 	
@@ -253,7 +276,8 @@ int mov_writer_write(struct mov_writer_t* writer, int track, const void* data, s
 	sample->dts = dts;
 	
 	sample->offset = mov_buffer_tell(&mov->io);
-	mov_buffer_write(&mov->io, data, bytes);
+	mov_buffer_write(&mov->io, nalu_size_ptr, 4);
+	mov_buffer_write(&mov->io, data_ptr, bytes - 4);
 
     if (INT64_MIN == mov->track->start_dts)
         mov->track->start_dts = sample->dts;

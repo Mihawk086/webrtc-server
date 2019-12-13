@@ -31,6 +31,7 @@
 #include "logger.h"
 #include "List.h"
 #include "Network/Buffer.h"
+#include "Util/ResourcePool.h"
 using namespace std;
 
 typedef struct x509_st X509;
@@ -43,24 +44,8 @@ namespace toolkit {
 
 class SSL_Initor {
 public:
+	friend class SSL_Box;
 	static SSL_Initor &Instance();
-
-	/**
-	 * 加载服务器证书,证书必须包含公钥和私钥，格式可以为pem和p12
-	 * 该接口已经过期，建议使用loadCertificate接口
-	 * @param pem_or_p12 证书文件路径
-	 * @param passwd 证书加密密码
-	 */
-	bool loadServerPem(const char *pem_or_p12, const char *passwd = "");
-
-	/**
-	 * 加载客户端证书,证书必须包含公钥和私钥，格式可以为pem和p12
-	 * 该接口已经过期，建议使用loadCertificate接口
-	 * 客户端默认可以不加载证书(除非服务器要求客户端提供证书)
-	 * @param pem_or_p12 证书文件路径
-	 * @param passwd 证书加密密码
-	 */
-	bool loadClientPem(const char *pem_or_p12, const char *passwd = "");
 
 	/**
 	 * 从文件或字符串中加载公钥和私钥
@@ -70,8 +55,9 @@ public:
 	 * @param serverMode 是否为服务器模式
 	 * @param passwd 私钥加密密码
 	 * @param isFile 参数pem_or_p12是否为文件路径
+	 * @param isDefault 是否为默认证书
 	 */
-	bool loadCertificate(const string &pem_or_p12,  bool serverMode = true, const string &passwd = "" , bool isFile = true);
+	bool loadCertificate(const string &pem_or_p12, bool serverMode = true, const string &passwd = "", bool isFile = true, bool isDefault = true);
 
 	/**
 	 * 加载公钥和私钥
@@ -81,22 +67,9 @@ public:
 	 * @param public_key 公钥
 	 * @param private_key 私钥
 	 * @param serverMode 是否为服务器模式
+	 * @param isDefault 是否为默认证书
 	 */
-	bool loadCertificate(X509 *public_key, EVP_PKEY *private_key, bool serverMode);
-
-	/**
-	 * 设置ssl context
-	 * @param ctx ssl context
-	 * @param serverMode ssl context
-	 */
-	bool setContext(const std::shared_ptr<SSL_CTX> &ctx,bool serverMode);
-
-	/**
-	 * 创建SSL对象
-	 * @param ctx
-	 * @return
-	 */
-	shared_ptr<SSL> makeSSL(bool serverMode);
+	bool loadCertificate(X509 *public_key, EVP_PKEY *private_key, bool serverMode = true, bool isDefault = true);
 
 	/**
 	 * 是否忽略无效的证书
@@ -114,7 +87,7 @@ public:
 	 * @param isFile 是否为文件路径
 	 * @return 是否加载成功
 	 */
-	bool trustCertificate(const string &pem_p12_cer,  bool serverMode = false, const string &passwd = "" , bool isFile = true) ;
+	bool trustCertificate(const string &pem_p12_cer, bool serverMode = false, const string &passwd = "", bool isFile = true);
 
 	/**
 	 * 信任某证书
@@ -122,44 +95,118 @@ public:
 	 * @param serverMode 是否为服务模式
 	 * @return 是否加载成功
 	 */
-	bool trustCertificate(X509 *cer,bool serverMode = false) ;
+	bool trustCertificate(X509 *cer,bool serverMode = false);
+
 private:
 	SSL_Initor();
 	~SSL_Initor();
+
+    /**
+	 * 创建SSL对象
+	 * @param ctx
+	 * @return
+	 */
+    shared_ptr<SSL> makeSSL(bool serverMode);
+
+	/**
+	 * 设置ssl context
+	 * @param vhost 虚拟主机名
+	 * @param ctx ssl context
+	 * @param serverMode ssl context
+	 * @param isDefault 是否为默认证书
+	 */
+	bool setContext(const string &vhost, const std::shared_ptr<SSL_CTX> &ctx, bool serverMode, bool isDefault = true);
+
+	/**
+	 * 设置SSL_CTX的默认配置
+	 * @param ctx 对象指针
+	 */
 	void setupCtx(SSL_CTX *ctx);
+
+	/**
+	 * 根据虚拟主机获取SSL_CTX对象
+	 * @param vhost 虚拟主机名
+	 * @param serverMode 是否为服务器模式
+	 * @return SSL_CTX对象
+	 */
+	std::shared_ptr<SSL_CTX> getSSLCtx(const string &vhost, bool serverMode);
+
+    /**
+     * 获取默认的虚拟主机
+     * @param serverMode
+     * @return
+     */
+    string defaultVhost(bool serverMode);
+
+    /**
+	 * 完成vhost name 匹配的回调函数
+	 * @param ssl
+	 * @param ad
+	 * @param arg
+	 * @return
+	 */
+	static int findCertificate(SSL *ssl, int *ad, void *arg);
+
 private:
-	std::shared_ptr<SSL_CTX> _ctx_server;
-	std::shared_ptr<SSL_CTX> _ctx_client;
+	std::shared_ptr<SSL_CTX> _ctx_empty[2];
+	map<string,std::shared_ptr<SSL_CTX> > _ctxs[2];
+	string _default_vhost[2];
 };
 
 ////////////////////////////////////////////////////////////////////////////////////
 
 class SSL_Box {
 public:
-	SSL_Box(bool serverMode = true,
-			bool enable = true ,
-			int buffSize = 4 * 1024);
+	SSL_Box(bool serverMode = true, bool enable = true, int buffSize = 32 * 1024);
 	~SSL_Box();
 
-	//收到密文后，调用此函数解密
+	/**
+	 * 收到密文后，调用此函数解密
+	 * @param buffer 收到的密文数据
+	 */
 	void onRecv(const Buffer::Ptr &buffer);
-	//需要加密明文调用此函数
+
+	/**
+	 * 需要加密明文调用此函数
+	 * @param buffer 需要加密的明文数据
+	 */
 	void onSend(const Buffer::Ptr &buffer);
 
-	//设置解密后获取明文的回调
+	/**
+	 * 设置解密后获取明文的回调
+	 * @param fun 回调对象
+	 */
 	template<typename F>
 	void setOnDecData(F &&fun) {
 		_onDec = std::forward<F>(fun);
 	}
 
-	//设置加密后获取密文的回调
+	/**
+	 * 设置加密后获取密文的回调
+	 * @param fun 回调对象
+	 */
 	template<typename F>
 	void setOnEncData(F &&fun) {
-		_onEnc = std::forward<F>(fun);;
+		_onEnc = std::forward<F>(fun);
 	}
+
+	/**
+	 * 终结ssl
+	 */
 	void shutdown();
-private:
+
+	/**
+	 * 清空数据
+	 */
 	void flush();
+
+	/**
+	 * 设置虚拟主机名
+	 * @param host 虚拟主机名
+	 * @return 是否成功
+	 */
+	bool setHost(const char *host);
+private:
 	void flushWriteBio();
 	void flushReadBio();
 private:
@@ -170,7 +217,8 @@ private:
 	function<void(const Buffer::Ptr &)> _onDec;
 	function<void(const Buffer::Ptr &)> _onEnc;
 	List<Buffer::Ptr> _bufferOut;
-	BufferRaw::Ptr _bufferBio;
+	ResourcePool<BufferRaw> _bufferPool;
+	int _buffSize;
 };
 
 

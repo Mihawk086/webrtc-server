@@ -32,19 +32,9 @@ namespace mediakit{
 
 void MediaSink::addTrack(const Track::Ptr &track_in) {
     lock_guard<recursive_mutex> lck(_mtx);
-//克隆Track，只拷贝其数据，不拷贝其数据转发关系
+    //克隆Track，只拷贝其数据，不拷贝其数据转发关系
     auto track = track_in->clone();
 
-    weak_ptr<MediaSink> weakSelf = shared_from_this();
-    track->addDelegate(std::make_shared<FrameWriterInterfaceHelper>([weakSelf](const Frame::Ptr &frame){
-        auto strongSelf = weakSelf.lock();
-        if(!strongSelf){
-            return;
-        }
-        if(strongSelf->_allTrackReady){
-            strongSelf->onTrackFrame(frame);
-        }
-    }));
     auto codec_id = track->getCodecId();
     _track_map[codec_id] = track;
     auto lam = [this,track](){
@@ -53,10 +43,26 @@ void MediaSink::addTrack(const Track::Ptr &track_in) {
     if(track->ready()){
         lam();
     }else{
+        _anyTrackUnReady = true;
         _allTrackReady = false;
         _trackReadyCallback[codec_id] = lam;
         _ticker.resetTime();
     }
+
+    track->addDelegate(std::make_shared<FrameWriterInterfaceHelper>([this](const Frame::Ptr &frame){
+        if(!_anyTrackUnReady){
+            onTrackFrame(frame);
+        }
+    }));
+}
+
+void MediaSink::resetTracks() {
+    lock_guard<recursive_mutex> lck(_mtx);
+    _anyTrackUnReady = false;
+    _allTrackReady = false;
+    _track_map.clear();
+    _trackReadyCallback.clear();
+    _ticker.resetTime();
 }
 
 void MediaSink::inputFrame(const Frame::Ptr &frame) {
@@ -69,7 +75,7 @@ void MediaSink::inputFrame(const Frame::Ptr &frame) {
     it->second->inputFrame(frame);
 
     if(!_allTrackReady && !_trackReadyCallback.empty() && it->second->ready()){
-        //Track由未就绪状态装换成就绪状态，我们就触发onTrackReady回调
+        //Track由未就绪状态转换成就绪状态，我们就触发onTrackReady回调
         auto it_callback = _trackReadyCallback.find(codec_id);
         if(it_callback != _trackReadyCallback.end()){
             it_callback->second();
@@ -79,7 +85,7 @@ void MediaSink::inputFrame(const Frame::Ptr &frame) {
 
     if(!_allTrackReady && (_trackReadyCallback.empty() || _ticker.elapsedTime() > MAX_WAIT_MS)){
         _allTrackReady = true;
-
+        _anyTrackUnReady = false;
         if(!_trackReadyCallback.empty()){
             //这是超时强制忽略未准备好的Track
             _trackReadyCallback.clear();
@@ -100,21 +106,16 @@ void MediaSink::inputFrame(const Frame::Ptr &frame) {
     }
 }
 
-bool MediaSink::isAllTrackReady() const {
-    return _allTrackReady;
-}
-
-Track::Ptr MediaSink::getTrack(TrackType type,bool trackReady) const {
+vector<Track::Ptr> MediaSink::getTracks(bool trackReady) const{
+    vector<Track::Ptr> ret;
     lock_guard<recursive_mutex> lck(_mtx);
     for (auto &pr : _track_map){
-        if(pr.second->getTrackType() == type){
-            if(!trackReady){
-                return pr.second;
-            }
-            return pr.second->ready() ? pr.second : nullptr;
+        if(trackReady && !pr.second->ready()){
+            continue;
         }
+        ret.emplace_back(pr.second);
     }
-    return nullptr;
+    return std::move(ret);
 }
 
 

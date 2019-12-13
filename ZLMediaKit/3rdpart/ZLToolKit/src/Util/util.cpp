@@ -33,6 +33,7 @@
 #include "Util/File.h"
 #include "Util/logger.h"
 #include "Util/uv_errno.h"
+#include "Network/sockutil.h"
 
 #if defined(_WIN32)
 #include <shlwapi.h>  
@@ -206,7 +207,7 @@ vector<string> split(const string& s, const char *delim) {
 		last = index + strlen(delim);
 		index = s.find(delim, last);
 	}
-	if (s.size() - last > 0) {
+	if (!s.size() || s.size() - last > 0) {
 		ret.push_back(s.substr(last));
 	}
 	return ret;
@@ -241,6 +242,10 @@ void replace(string &str, const string &old_str, const string &new_str) {
 	}
 	str.replace(pos, old_str.size(), new_str);
 	replace(str, old_str, new_str);
+}
+
+bool isIP(const char *str){
+	return INADDR_NONE != inet_addr(str);
 }
 
 #if defined(_WIN32)
@@ -337,6 +342,23 @@ uint64_t getCurrentMillisecond() {
 uint64_t getCurrentMicrosecond() {
 	static bool flag = initMillisecondThread();
 	return s_currentMicrosecond.load(memory_order_acquire);
+}
+
+string getTimeStr(const char *fmt,time_t time){
+    std::tm tm_snapshot;
+    if(!time){
+        time = ::time(NULL);
+    }
+#if defined(_WIN32)
+    localtime_s(&tm_snapshot, &time); // thread-safe
+#else
+    localtime_r(&time, &tm_snapshot); // POSIX
+#endif
+    char buffer[1024];
+    auto success = std::strftime(buffer, sizeof(buffer), fmt, &tm_snapshot);
+    if (0 == success)
+        return string(fmt);
+    return buffer;
 }
 
 }  // namespace toolkit

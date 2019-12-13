@@ -33,6 +33,18 @@ int mov_writer_add_subtitle(mov_writer_t* mov, uint8_t object, const void* extra
 /// @return 0-ok, other-error
 int mov_writer_write(mov_writer_t* mov, int track, const void* data, size_t bytes, int64_t pts, int64_t dts, int flags);
 
+/// 跟函数mov_writer_write功能差不多，但是多个with_nalu_size参数
+/// \param writer
+/// \param track
+/// \param data
+/// \param bytes
+/// \param pts
+/// \param dts
+/// \param flags
+/// \param with_nalu_size 头4个字节是否为nalu_size
+/// \return
+int mov_writer_write_l(struct mov_writer_t* writer, int track, const void* data, size_t bytes, int64_t pts, int64_t dts, int flags , int with_nalu_size);
+
 #ifdef __cplusplus
 }
 #endif

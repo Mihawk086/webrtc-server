@@ -34,37 +34,47 @@
 
 namespace mediakit{
 
-class RtmpMuxer : public MediaSink{
+class RtmpMuxer : public MediaSinkInterface{
 public:
     typedef std::shared_ptr<RtmpMuxer> Ptr;
 
     /**
      * 构造函数
      */
-    RtmpMuxer(const TitleMete::Ptr &title);
+    RtmpMuxer(const TitleMeta::Ptr &title);
     virtual ~RtmpMuxer(){}
 
     /**
      * 获取完整的SDP字符串
      * @return SDP字符串
      */
-    const AMFValue &getMetedata() const ;
+    const AMFValue &getMetadata() const ;
 
     /**
      * 获取rtmp环形缓存
      * @return
      */
     RtmpRingInterface::RingType::Ptr getRtmpRing() const;
-protected:
+
     /**
-   * 某track已经准备好，其ready()状态返回true，
-   * 此时代表可以获取其例如sps pps等相关信息了
-   * @param track
-   */
-    void onTrackReady(const Track::Ptr & track) override ;
+     * 添加ready状态的track
+     */
+    void addTrack(const Track::Ptr & track) override;
+
+    /**
+     * 写入帧数据
+     * @param frame 帧
+     */
+    void inputFrame(const Frame::Ptr &frame) override;
+
+    /**
+     * 重置所有track
+     */
+    void resetTracks() override ;
 private:
     RtmpRingInterface::RingType::Ptr _rtmpRing;
-    AMFValue _metedata;
+    AMFValue _metadata;
+    RtmpCodec::Ptr _encoder[TrackMax];
 };
 
 

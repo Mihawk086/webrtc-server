@@ -50,8 +50,7 @@ MediaStream::MediaStream(std::shared_ptr<Worker> worker,
   std::shared_ptr<WebRtcConnection> connection,
   const std::string& media_stream_id,
   const std::string& media_stream_label,
-  bool is_publisher,WebRtcTransport* tran) :
-  m_tran(tran),
+  bool is_publisher) :
     audio_enabled_{false}, video_enabled_{false},
     media_stream_event_listener_{nullptr},
     connection_{std::move(connection)},
@@ -846,9 +845,6 @@ void MediaStream::parseIncomingPayloadType(char *buf, int len, packetType type) 
 void MediaStream::write(std::shared_ptr<DataPacket> packet) {
   if (connection_) {
     connection_->write(packet);
-  }
-  if(m_tran){
-      m_tran->Write(packet);
   }
 }
 

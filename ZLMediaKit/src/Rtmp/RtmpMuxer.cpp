@@ -29,59 +29,69 @@
 
 namespace mediakit {
 
-RtmpMuxer::RtmpMuxer(const TitleMete::Ptr &title) {
+RtmpMuxer::RtmpMuxer(const TitleMeta::Ptr &title) {
     if(!title){
-        _metedata = std::make_shared<TitleMete>()->getMetedata();
+        _metadata = std::make_shared<TitleMeta>()->getMetadata();
     }else{
-        _metedata = title->getMetedata();
+        _metadata = title->getMetadata();
     }
     _rtmpRing = std::make_shared<RtmpRingInterface::RingType>();
 }
 
-void RtmpMuxer::onTrackReady(const Track::Ptr &track) {
-    //生成rtmp编码器
-    //克隆该Track，防止循环引用
-    auto encoder = Factory::getRtmpCodecByTrack(track->clone());
-    if (!encoder) {
-        return;
-    }
-    //根据track生产metedata
-    Metedata::Ptr metedate;
+void RtmpMuxer::addTrack(const Track::Ptr &track) {
+    //根据track生产metadata
+    Metadata::Ptr metadata;
     switch (track->getTrackType()){
         case TrackVideo:{
-            metedate = std::make_shared<VideoMete>(dynamic_pointer_cast<VideoTrack>(track));
+            metadata = std::make_shared<VideoMeta>(dynamic_pointer_cast<VideoTrack>(track));
         }
             break;
         case TrackAudio:{
-            metedate = std::make_shared<AudioMete>(dynamic_pointer_cast<AudioTrack>(track));
+            metadata = std::make_shared<AudioMeta>(dynamic_pointer_cast<AudioTrack>(track));
         }
             break;
         default:
-            return;;
+            return;
 
     }
-    //添加其metedata
-    metedate->getMetedata().object_for_each([&](const std::string &key, const AMFValue &value){
-        _metedata.set(key,value);
-    });
-    //设置Track的代理，这样输入frame至Track时，最终数据将输出到RtmpEncoder中
-    track->addDelegate(encoder);
-    //Rtmp编码器共用同一个环形缓存
+
+    auto &encoder = _encoder[track->getTrackType()];
+    //生成rtmp编码器,克隆该Track，防止循环引用
+    encoder = Factory::getRtmpCodecByTrack(track->clone());
+    if (!encoder) {
+        return;
+    }
+
+    //设置rtmp输出环形缓存
     encoder->setRtmpRing(_rtmpRing);
+
+    //添加其metadata
+    metadata->getMetadata().object_for_each([&](const std::string &key, const AMFValue &value){
+        _metadata.set(key,value);
+    });
 }
 
-
-const AMFValue &RtmpMuxer::getMetedata() const {
-    if(!isAllTrackReady()){
-        //尚未就绪
-        static AMFValue s_amf;
-        return s_amf;
+void RtmpMuxer::inputFrame(const Frame::Ptr &frame) {
+    auto &encoder = _encoder[frame->getTrackType()];
+    if(encoder){
+        encoder->inputFrame(frame);
     }
-    return _metedata;
+}
+
+const AMFValue &RtmpMuxer::getMetadata() const {
+    return _metadata;
 }
 
 RtmpRingInterface::RingType::Ptr RtmpMuxer::getRtmpRing() const {
     return _rtmpRing;
 }
+
+void RtmpMuxer::resetTracks() {
+    _metadata.clear();
+    for(auto &encoder : _encoder){
+        encoder = nullptr;
+    }
+}
+
 
 }/* namespace mediakit */

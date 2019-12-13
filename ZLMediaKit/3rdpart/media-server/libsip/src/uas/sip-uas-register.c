@@ -26,7 +26,7 @@ Expires: 7200
 Content-Length: 0
 */
 
-static int sip_uas_get_expires(const char* expires)
+static inline int sip_uas_get_expires(const char* expires)
 {
 	struct tm tm;
 	memset(&tm, 0, sizeof(tm));
@@ -38,13 +38,13 @@ static int sip_uas_get_expires(const char* expires)
 	return (int)(mktime(&tm) - time(NULL));
 }
 
-static int sip_register_check_request_uri(const struct uri_t* uri)
+static inline int sip_register_check_request_uri(const struct uri_t* uri)
 {
 	// Request-URI: The "userinfo" and "@" components of the SIP URI MUST NOT be present
 	return (uri && uri->host) ? 1 : 0;
 }
 
-static int sip_register_check_to_domain(const struct sip_message_t* req)
+static inline int sip_register_check_to_domain(const struct sip_message_t* req)
 {
 	int r;
 	struct uri_t* to;

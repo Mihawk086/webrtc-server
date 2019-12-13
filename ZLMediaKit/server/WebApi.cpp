@@ -45,6 +45,8 @@
 #include "Util/MD5.h"
 #include "WebApi.h"
 #include "WebHook.h"
+#include "Thread/WorkThreadPool.h"
+#include "Rtp/RtpSelector.h"
 
 #if !defined(_WIN32)
 #include "FFmpegSource.h"
@@ -70,6 +72,8 @@ typedef map<string,variant,StrCaseCompare> ApiArgsType;
          lam(sender,headerIn, headerOut, allArgs, val); \
          invoker("200 OK", headerOut, val.toStyledString()); \
      });
+
+#define API_ARGS_VALUE sender,headerIn,headerOut,allArgs,val,invoker
 
 #define API_REGIST_INVOKER(field, name, ...) \
     s_map_api.emplace("/index/"#field"/"#name,[](API_ARGS,const HttpSession::HttpResponseInvoker &invoker) __VA_ARGS__);
@@ -180,19 +184,35 @@ static inline void addHttpListener(){
         if(api_debug){
             auto newInvoker = [invoker,parser,allArgs](const string &codeOut,
                                                        const HttpSession::KeyValue &headerOut,
-                                                       const string &contentOut){
+                                                       const HttpBody::Ptr &body){
                 stringstream ss;
                 for(auto &pr : allArgs ){
                     ss << pr.first << " : " << pr.second << "\r\n";
                 }
 
-                DebugL << "\r\n# request:\r\n" << parser.Method() << " " << parser.FullUrl() << "\r\n"
-                       << "# content:\r\n" << parser.Content() << "\r\n"
-                       << "# args:\r\n" << ss.str()
-                       << "# response:\r\n"
-                       << contentOut << "\r\n";
+                //body默认为空
+                int64_t size = 0;
+                if (body && body->remainSize()) {
+                    //有body，获取body大小
+                    size = body->remainSize();
+                }
 
-                invoker(codeOut,headerOut,contentOut);
+                if(size < 4 * 1024){
+                    string contentOut = body->readData(size)->toString();
+                    DebugL << "\r\n# request:\r\n" << parser.Method() << " " << parser.FullUrl() << "\r\n"
+                           << "# content:\r\n" << parser.Content() << "\r\n"
+                           << "# args:\r\n" << ss.str()
+                           << "# response:\r\n"
+                           << contentOut << "\r\n";
+                    invoker(codeOut,headerOut,contentOut);
+                } else{
+                    DebugL << "\r\n# request:\r\n" << parser.Method() << " " << parser.FullUrl() << "\r\n"
+                           << "# content:\r\n" << parser.Content() << "\r\n"
+                           << "# args:\r\n" << ss.str()
+                           << "# response size:"
+                           << size <<"\r\n";
+                    invoker(codeOut,headerOut,body);
+                }
             };
             ((HttpSession::HttpResponseInvoker &)invoker) = newInvoker;
         }
@@ -277,6 +297,25 @@ void installWebApi() {
                 obj["delay"] = vecDelay[i++];
                 val["data"].append(obj);
             }
+            val["code"] = API::Success;
+            invoker("200 OK", headerOut, val.toStyledString());
+        });
+    });
+
+    //获取后台工作线程负载
+    //测试url http://127.0.0.1/index/api/getWorkThreadsLoad
+    API_REGIST_INVOKER(api, getWorkThreadsLoad, {
+        WorkThreadPool::Instance().getExecutorDelay([invoker, headerOut](const vector<int> &vecDelay) {
+            Value val;
+            auto vec = WorkThreadPool::Instance().getExecutorLoad();
+            int i = 0;
+            for (auto load : vec) {
+                Value obj(objectValue);
+                obj["load"] = load;
+                obj["delay"] = vecDelay[i++];
+                val["data"].append(obj);
+            }
+            val["code"] = API::Success;
             invoker("200 OK", headerOut, val.toStyledString());
         });
     });
@@ -313,7 +352,7 @@ void installWebApi() {
         }
         if (changed > 0) {
             NoticeCenter::Instance().emitEvent(Broadcast::kBroadcastReloadConfig);
-            ini.dumpFile();
+            ini.dumpFile(g_ini_file);
         }
         val["changed"] = changed;
     });
@@ -357,29 +396,58 @@ void installWebApi() {
     API_REGIST(api,getMediaList,{
         CHECK_SECRET();
         //获取所有MediaSource列表
-        val["code"] = API::Success;
-        val["msg"] = "success";
-        MediaSource::for_each_media([&](const string &schema,
-                                        const string &vhost,
-                                        const string &app,
-                                        const string &stream,
-                                        const MediaSource::Ptr &media){
-            if(!allArgs["schema"].empty() && allArgs["schema"] != schema){
+        MediaSource::for_each_media([&](const MediaSource::Ptr &media){
+            if(!allArgs["schema"].empty() && allArgs["schema"] != media->getSchema()){
                 return;
             }
-            if(!allArgs["vhost"].empty() && allArgs["vhost"] != vhost){
+            if(!allArgs["vhost"].empty() && allArgs["vhost"] != media->getVhost()){
                 return;
             }
-            if(!allArgs["app"].empty() && allArgs["app"] != app){
+            if(!allArgs["app"].empty() && allArgs["app"] != media->getApp()){
                 return;
             }
             Value item;
-            item["schema"] = schema;
-            item["vhost"] = vhost;
-            item["app"] = app;
-            item["stream"] = stream;
+            item["schema"] = media->getSchema();
+            item["vhost"] = media->getVhost();
+            item["app"] = media->getApp();
+            item["stream"] = media->getId();
+            item["readerCount"] = media->readerCount();
+            for(auto &track : media->getTracks()){
+                Value obj;
+                obj["codec_id"] = track->getCodecId();
+                obj["codec_type"] = track->getTrackType();
+                obj["ready"] = track->ready();
+                item["tracks"].append(obj);
+            }
             val["data"].append(item);
         });
+    });
+
+    //测试url http://127.0.0.1/index/api/isMediaOnline?schema=rtsp&vhost=__defaultVhost__&app=live&stream=obs
+    API_REGIST(api,isMediaOnline,{
+        CHECK_SECRET();
+        CHECK_ARGS("schema","vhost","app","stream");
+        val["online"] = (bool) (MediaSource::find(allArgs["schema"],allArgs["vhost"],allArgs["app"],allArgs["stream"],false));
+    });
+
+    //测试url http://127.0.0.1/index/api/getMediaInfo?schema=rtsp&vhost=__defaultVhost__&app=live&stream=obs
+    API_REGIST(api,getMediaInfo,{
+        CHECK_SECRET();
+        CHECK_ARGS("schema","vhost","app","stream");
+        auto src = MediaSource::find(allArgs["schema"],allArgs["vhost"],allArgs["app"],allArgs["stream"],false);
+        if(!src){
+            val["online"] = false;
+            return;
+        }
+        val["online"] = true;
+        val["readerCount"] = src->readerCount();
+        for(auto &track : src->getTracks()){
+            Value obj;
+            obj["codec_id"] = track->getCodecId();
+            obj["codec_type"] = track->getTrackType();
+            obj["ready"] = track->ready();
+            val["tracks"].append(obj);
+        }
     });
 
     //主动关断流，包括关断拉流、推流
@@ -394,12 +462,47 @@ void installWebApi() {
                                      allArgs["stream"]);
         if(src){
             bool flag = src->close(allArgs["force"].as<bool>());
-            val["code"] = flag ? 0 : -1;
+            val["result"] = flag ? 0 : -1;
             val["msg"] = flag ? "success" : "close failed";
         }else{
-            val["code"] = -2;
+            val["result"] = -2;
             val["msg"] = "can not find the stream";
         }
+    });
+
+    //批量主动关断流，包括关断拉流、推流
+    //测试url http://127.0.0.1/index/api/close_streams?schema=rtsp&vhost=__defaultVhost__&app=live&stream=obs&force=1
+    API_REGIST(api,close_streams,{
+        CHECK_SECRET();
+        //筛选命中个数
+        int count_hit = 0;
+        int count_closed = 0;
+        list<MediaSource::Ptr> media_list;
+        MediaSource::for_each_media([&](const MediaSource::Ptr &media){
+            if(!allArgs["schema"].empty() && allArgs["schema"] != media->getSchema()){
+                return;
+            }
+            if(!allArgs["vhost"].empty() && allArgs["vhost"] != media->getVhost()){
+                return;
+            }
+            if(!allArgs["app"].empty() && allArgs["app"] != media->getApp()){
+                return;
+            }
+            if(!allArgs["stream"].empty() && allArgs["stream"] != media->getId()){
+                return;
+            }
+            ++count_hit;
+            media_list.emplace_back(media);
+        });
+
+        bool force = allArgs["force"].as<bool>();
+        for(auto &media : media_list){
+            if(media->close(force)){
+                ++count_closed;
+            }
+        }
+        val["count_hit"] = count_hit;
+        val["count_closed"] = count_closed;
     });
 
     //获取所有TcpSession列表信息
@@ -412,7 +515,7 @@ void installWebApi() {
         string &peer_ip = allArgs["peer_ip"];
 
         SessionMap::Instance().for_each_session([&](const string &id,const TcpSession::Ptr &session){
-            if(local_port != API::Success && local_port != session->get_local_port()){
+            if(local_port != 0 && local_port != session->get_local_port()){
                 return;
             }
             if(!peer_ip.empty() && peer_ip != session->get_peer_ip()){
@@ -436,13 +539,36 @@ void installWebApi() {
         //踢掉tcp会话
         auto session = SessionMap::Instance().get(allArgs["id"]);
         if(!session){
-            val["code"] = API::OtherFailed;
-            val["msg"] = "can not find the target";
-            return;
+            throw ApiRetException("can not find the target",API::OtherFailed);
         }
         session->safeShutdown();
-        val["code"] = API::Success;
-        val["msg"] = "success";
+    });
+
+
+    //批量断开tcp连接，比如说可以断开rtsp、rtmp播放器等
+    //测试url http://127.0.0.1/index/api/kick_sessions?local_port=1935
+    API_REGIST(api,kick_sessions,{
+        CHECK_SECRET();
+        uint16_t local_port = allArgs["local_port"].as<uint16_t>();
+        string &peer_ip = allArgs["peer_ip"];
+        uint64_t count_hit = 0;
+
+        list<TcpSession::Ptr> session_list;
+        SessionMap::Instance().for_each_session([&](const string &id,const TcpSession::Ptr &session){
+            if(local_port != 0 && local_port != session->get_local_port()){
+                return;
+            }
+            if(!peer_ip.empty() && peer_ip != session->get_peer_ip()){
+                return;
+            }
+            session_list.emplace_back(session);
+            ++count_hit;
+        });
+
+        for(auto &session : session_list){
+            session->safeShutdown();
+        }
+        val["count_hit"] = (Json::UInt64)count_hit;
     });
 
     static auto addStreamProxy = [](const string &vhost,
@@ -520,7 +646,7 @@ void installWebApi() {
     });
 
 #if !defined(_WIN32)
-    static auto addFFmepgSource = [](const string &src_url,
+    static auto addFFmpegSource = [](const string &src_url,
                                      const string &dst_url,
                                      int timeout_ms,
                                      const function<void(const SockException &ex,const string &key)> &cb){
@@ -557,7 +683,7 @@ void installWebApi() {
         auto dst_url = allArgs["dst_url"];
         int timeout_ms = allArgs["timeout_ms"];
 
-        addFFmepgSource(src_url,dst_url,timeout_ms,[invoker,val,headerOut](const SockException &ex,const string &key){
+        addFFmpegSource(src_url,dst_url,timeout_ms,[invoker,val,headerOut](const SockException &ex,const string &key){
             if(ex){
                 const_cast<Value &>(val)["code"] = API::OtherFailed;
                 const_cast<Value &>(val)["msg"] = ex.what();
@@ -568,20 +694,96 @@ void installWebApi() {
         });
     });
 
-    //关闭拉流代理
-    //测试url http://127.0.0.1/index/api/delFFmepgSource?key=key
-    API_REGIST(api,delFFmepgSource,{
+
+    static auto api_delFFmpegSource = [](API_ARGS,const HttpSession::HttpResponseInvoker &invoker){
         CHECK_SECRET();
         CHECK_ARGS("key");
         lock_guard<decltype(s_ffmpegMapMtx)> lck(s_ffmpegMapMtx);
         val["data"]["flag"] = s_ffmpegMap.erase(allArgs["key"]) == 1;
+    };
+
+    //关闭拉流代理
+    //测试url http://127.0.0.1/index/api/delFFmepgSource?key=key
+    API_REGIST(api,delFFmpegSource,{
+        api_delFFmpegSource(API_ARGS_VALUE);
+    });
+
+    //此处为了兼容之前的拼写错误
+    API_REGIST(api,delFFmepgSource,{
+        api_delFFmpegSource(API_ARGS_VALUE);
     });
 #endif
+
+    //新增http api下载可执行程序文件接口
+    //测试url http://127.0.0.1/index/api/downloadBin
+    API_REGIST_INVOKER(api,downloadBin,{
+        CHECK_SECRET();
+        invoker.responseFile(headerIn,StrCaseMap(),exePath());
+    });
+
+#if defined(ENABLE_RTPPROXY)
+    API_REGIST(api,getSsrcInfo,{
+        CHECK_SECRET();
+        CHECK_ARGS("ssrc");
+        uint32_t ssrc = 0;
+        stringstream ss(allArgs["ssrc"]);
+        ss >> std::hex >> ssrc;
+
+        auto process = RtpSelector::Instance().getProcess(ssrc,false);
+        if(!process){
+            val["exist"] = false;
+            return;
+        }
+        val["exist"] = true;
+        val["peer_ip"] = process->get_peer_ip();
+        val["peer_port"] = process->get_peer_port();
+    });
+#endif//ENABLE_RTPPROXY
+
+    // 开始录制hls或MP4
+    API_REGIST(api,startRecord,{
+        CHECK_SECRET();
+        CHECK_ARGS("type","vhost","app","stream","wait_for_record","continue_record");
+        int result = Recorder::startRecord((Recorder::type)allArgs["type"].as<int>(),
+                                           allArgs["vhost"],
+                                           allArgs["app"],
+                                           allArgs["stream"],
+                                           allArgs["wait_for_record"],
+                                           allArgs["continue_record"]);
+        val["result"] = result;
+    });
+
+    // 停止录制hls或MP4
+    API_REGIST(api,stopRecord,{
+        CHECK_SECRET();
+        CHECK_ARGS("type","vhost","app","stream");
+        int result = Recorder::stopRecord((Recorder::type)allArgs["type"].as<int>(),
+                                          allArgs["vhost"],
+                                          allArgs["app"],
+                                          allArgs["stream"]);
+        val["result"] = result;
+    });
+
+    // 获取hls或MP4录制状态
+    API_REGIST(api,getRecordStatus,{
+        CHECK_SECRET();
+        CHECK_ARGS("type","vhost","app","stream");
+        auto status = Recorder::getRecordStatus((Recorder::type)allArgs["type"].as<int>(),
+                                                allArgs["vhost"],
+                                                allArgs["app"],
+                                                allArgs["stream"]);
+        val["status"] = (int)status;
+    });
 
     ////////////以下是注册的Hook API////////////
     API_REGIST(hook,on_publish,{
         //开始推流事件
-        throw SuccessException();
+        //转换成rtsp或rtmp
+        val["enableRtxp"] = true;
+        //转换hls
+        val["enableHls"] = true;
+        //不录制mp4
+        val["enableMP4"] = false;
     });
 
     API_REGIST(hook,on_play,{
@@ -631,7 +833,7 @@ void installWebApi() {
                 << allArgs["stream"] << "?vhost="
                 << allArgs["vhost"];
 
-        addFFmepgSource("http://live.hkstv.hk.lxdns.com/live/hks2/playlist.m3u8",/** ffmpeg拉流支持任意编码格式任意协议 **/
+        addFFmpegSource("http://live.hkstv.hk.lxdns.com/live/hks2/playlist.m3u8",/** ffmpeg拉流支持任意编码格式任意协议 **/
                         dst_url,
                         (1000 * timeout_sec) - 500,
                         [invoker,val,headerOut](const SockException &ex,const string &key){
@@ -710,6 +912,12 @@ void installWebApi() {
         val["path"] = "";
         //该http客户端用户被授予10分钟的访问权限，该权限仅限访问当前目录
         val["second"] = 10 * 60;
+    });
+
+
+    API_REGIST(hook,on_server_started,{
+        //服务器重启报告
+        throw SuccessException();
     });
 
 

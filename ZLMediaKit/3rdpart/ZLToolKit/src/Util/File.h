@@ -28,6 +28,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include "util.h"
+#include <functional>
+
 using namespace std;
 #if defined(__linux__)
 #include <limits.h>
@@ -99,6 +102,30 @@ public:
 	 * @return 是否保存成功
 	 */
 	static bool saveFile(const string &data,const char *path);
+
+	/**
+	 * 获取父文件夹
+	 * @param path 路径
+	 * @return 文件夹
+	 */
+	static string parentDir(const string &path);
+
+    /**
+     * 替换"../"，获取绝对路径
+     * @param path 相对路径，里面可能包含 "../"
+     * @param currentPath 当前目录
+	 * @param canAccessParent 能否访问父目录之外的目录
+     * @return 替换"../"之后的路径
+     */
+	static string absolutePath(const string &path, const string &currentPath,bool canAccessParent = false);
+
+	/**
+	 * 遍历文件夹下的所有文件
+	 * @param path 文件夹路径
+	 * @param cb 回调对象 ，path为绝对路径，isDir为该路径是否为文件夹，返回true代表继续扫描，否则中断
+	 * @param enterSubdirectory 是否进入子目录扫描
+	 */
+	static void scanDir(const string &path,const function<bool(const string &path,bool isDir)> &cb, bool enterSubdirectory = false);
 private:
 	File();
 	~File();

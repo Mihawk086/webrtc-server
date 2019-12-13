@@ -38,11 +38,31 @@ using namespace toolkit;
 
 namespace mediakit{
 
+class MediaSinkInterface : public FrameWriterInterface {
+public:
+    typedef std::shared_ptr<MediaSinkInterface> Ptr;
+
+    MediaSinkInterface(){};
+    virtual ~MediaSinkInterface(){};
+
+    /**
+     * 添加track，内部会调用Track的clone方法
+     * 只会克隆sps pps这些信息 ，而不会克隆Delegate相关关系
+     * @param track
+     */
+    virtual void addTrack(const Track::Ptr & track) = 0;
+
+    /**
+     * 重置track
+     */
+    virtual void resetTracks() = 0;
+};
+
 /**
  * 该类的作用是等待Track ready()返回true也就是就绪后再通知派生类进行下一步的操作
  * 目的是输入Frame前由Track截取处理下，以便获取有效的信息（譬如sps pps aa_cfg）
  */
-class MediaSink : public FrameWriterInterface , public std::enable_shared_from_this<MediaSink>{
+class MediaSink : public MediaSinkInterface , public TrackSource{
 public:
     typedef std::shared_ptr<MediaSink> Ptr;
     MediaSink(){}
@@ -52,30 +72,25 @@ public:
      * 输入frame
      * @param frame
      */
-    void inputFrame(const Frame::Ptr &frame) override ;
+    void inputFrame(const Frame::Ptr &frame) override;
 
     /**
      * 添加track，内部会调用Track的clone方法
      * 只会克隆sps pps这些信息 ，而不会克隆Delegate相关关系
      * @param track
      */
-    virtual void addTrack(const Track::Ptr & track);
-
-
-    /**
-     * 全部Track是否都准备好了
-     * @return
-     */
-    bool isAllTrackReady() const ;
-
+    void addTrack(const Track::Ptr & track) override;
 
     /**
-     * 获取特定类型的Track
-     * @param type track类型
-	 * @param trackReady 是否获取已经准备好的Track
-     * @return
+     * 重置track
      */
-    Track::Ptr getTrack(TrackType type,bool trackReady = true) const ;
+    void resetTracks() override;
+
+    /**
+     * 获取所有Track
+     * @param trackReady 是否获取已经准备好的Track
+     */
+    vector<Track::Ptr> getTracks(bool trackReady = true) const override ;
 protected:
     /**
      * 某track已经准备好，其ready()状态返回true，
@@ -99,6 +114,7 @@ private:
     map<int,Track::Ptr> _track_map;
     map<int,function<void()> > _trackReadyCallback;
     bool _allTrackReady = false;
+    bool _anyTrackUnReady = false;
     Ticker _ticker;
 };
 

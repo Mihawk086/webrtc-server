@@ -25,17 +25,38 @@
 
 #include "logger.h"
 #include "onceToken.h"
+#include "File.h"
+#include <sys/stat.h>
 
 namespace toolkit {
 
+#ifdef _WIN32
+#define CLEAR_COLOR 7
+	static const WORD LOG_CONST_TABLE[][3] = {
+			{0x97, 0x09 , 'T'},//蓝底灰字，黑底蓝字，window console默认黑底
+			{0xA7, 0x0A , 'D'},//绿底灰字，黑底绿字
+			{0xB7, 0x0B , 'I'},//天蓝底灰字，黑底天蓝字
+			{0xE7, 0x0E , 'W'},//黄底灰字，黑底黄字
+			{0xC7, 0x0C , 'E'} };//红底灰字，黑底红字
 
+	bool SetConsoleColor(WORD Color)
+	{
+		HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+		if (handle == 0)
+			return false;
+
+		BOOL ret = SetConsoleTextAttribute(handle, Color);
+		return(ret == TRUE);
+	}
+#else
 #define CLEAR_COLOR "\033[0m"
-static const char *LOG_CONST_TABLE[][3] = {
-        {"\033[44;37m", "\033[34m" , "T"},
-        {"\033[42;37m", "\033[32m" , "D"},
-        {"\033[46;37m", "\033[36m" , "I"},
-        {"\033[43;37m", "\033[33m" , "W"},
-        {"\033[41;37m", "\033[31m" , "E"}};
+	static const char* LOG_CONST_TABLE[][3] = {
+			{"\033[44;37m", "\033[34m" , "T"},
+			{"\033[42;37m", "\033[32m" , "D"},
+			{"\033[46;37m", "\033[36m" , "I"},
+			{"\033[43;37m", "\033[33m" , "W"},
+			{"\033[41;37m", "\033[31m" , "E"} };
+#endif
 
 ///////////////////Logger///////////////////
 INSTANCE_IMP(Logger,exeName());
@@ -191,8 +212,10 @@ void ConsoleChannel::write(const Logger &logger,const LogContextPtr &logContext)
         return;
     }
 
-#if defined(_WIN32) || defined(OS_IPHONE)
-    format(logger,std::cout, logContext , false);
+#if defined(_WIN32)
+    format(logger,std::cout, logContext , true, true);
+#elif defined(OS_IPHONE)
+	format(logger, std::cout, logContext, false);
 #elif defined(ANDROID)
     static android_LogPriority LogPriorityArr[10];
     static onceToken s_token([](){
@@ -272,10 +295,18 @@ void LogChannel::format(const Logger &logger,ostream &ost,const LogContextPtr & 
     }
 
     if (enableColor) {
+#ifdef _WIN32
+        SetConsoleColor(LOG_CONST_TABLE[logContext->_level][1]);
+#else
         ost << LOG_CONST_TABLE[logContext->_level][1];
+#endif
     }
 
+#ifdef _WIN32
+    ost << printTime(logContext->_tv) << " " << (char)LOG_CONST_TABLE[logContext->_level][2] << " | ";
+#else
     ost << printTime(logContext->_tv) << " " << LOG_CONST_TABLE[logContext->_level][2] << " | ";
+#endif
 
     if (enableDetail) {
         ost << logContext->_function << " ";
@@ -284,21 +315,25 @@ void LogChannel::format(const Logger &logger,ostream &ost,const LogContextPtr & 
     ost << logContext->str();
 
     if (enableColor) {
-        ost << CLEAR_COLOR;
+#ifdef _WIN32
+		SetConsoleColor(CLEAR_COLOR);
+#else
+		ost << CLEAR_COLOR;
+#endif
     }
 
     ost << endl;
 }
 
-///////////////////FileChannel///////////////////
-FileChannel::FileChannel(const string &name, const string &path, LogLevel level) :
+///////////////////FileChannelBase///////////////////
+FileChannelBase::FileChannelBase(const string &name, const string &path, LogLevel level) :
         LogChannel(name, level), _path(path) {}
 
-FileChannel::~FileChannel() {
+FileChannelBase::~FileChannelBase() {
     close();
 }
 
-void FileChannel::write(const Logger &logger,const std::shared_ptr<LogContext> &logContext) {
+void FileChannelBase::write(const Logger &logger,const std::shared_ptr<LogContext> &logContext) {
     if (_level > logContext->_level) {
         return;
     }
@@ -308,22 +343,28 @@ void FileChannel::write(const Logger &logger,const std::shared_ptr<LogContext> &
     format(logger, _fstream, logContext ,false);
 }
 
-void FileChannel::setPath(const string &path) {
+void FileChannelBase::setPath(const string &path) {
     _path = path;
     open();
 }
 
-const string &FileChannel::path() const {
+const string &FileChannelBase::path() const {
     return _path;
 }
 
-void FileChannel::open() {
+void FileChannelBase::open() {
     // Ensure a path was set
     if (_path.empty()) {
         throw runtime_error("Log file path must be set.");
     }
     // Open the file stream
     _fstream.close();
+#if !defined(_WIN32)
+    //创建文件夹
+    File::createfile_path(_path.c_str(),S_IRWXO | S_IRWXG | S_IRWXU);
+#else
+    File::createfile_path(_path.c_str(),0);
+#endif
     _fstream.open(_path.c_str(), ios::out | ios::app);
     // Throw on failure
     if (!_fstream.is_open()) {
@@ -331,10 +372,69 @@ void FileChannel::open() {
     }
 }
 
-void FileChannel::close() {
+void FileChannelBase::close() {
     _fstream.close();
 }
 
+///////////////////FileChannel///////////////////
+FileChannel::FileChannel(const string &name, const string &dir, LogLevel level) : FileChannelBase(name, "", level) {
+    _dir = dir;
+    if(_dir.back() != '/'){
+        _dir.append("/");
+    }
+}
+FileChannel::~FileChannel() {}
+
+static const auto s_second_per_day = 24 * 60 * 60;
+int64_t FileChannel::getDay(time_t second) {
+    return second / s_second_per_day;
+}
+
+static string getLogFilePath(const string &dir,uint64_t day){
+    time_t second = s_second_per_day * day;
+    struct tm *tm = localtime(&second);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%d-%02d-%02d.log", 1900 + tm->tm_year, 1 + tm->tm_mon, tm->tm_mday);
+    return dir + buf;
+}
+
+void FileChannel::write(const Logger &logger, const shared_ptr<LogContext> &stream) {
+    //这条日志所在第几天
+    auto day = getDay(stream->_tv.tv_sec);
+    if(day != _last_day){
+        //这条日志是新的一天，记录这一天
+        _last_day = day;
+        //获取日志当天对应的文件，每天只有一个文件
+        auto log_file = getLogFilePath(_dir,day);
+        //记录所有的日志文件，以便后续删除老的日志
+        _log_file_map.emplace(day,log_file);
+        //打开新的日志文件
+        setPath(log_file);
+        clean();
+    }
+    //写日志
+    FileChannelBase::write(logger,stream);
+}
+
+void FileChannel::clean(){
+    //获取今天是第几天
+    auto today = getDay(time(NULL));
+    //遍历所有日志文件，删除老日志
+    for(auto it = _log_file_map.begin(); it != _log_file_map.end() ; ){
+        if(today < it->first + _log_max_day){
+            //这个日志文件距今不超过_log_max_day天
+            break;
+        }
+        //这个文件距今超过了_log_max_day天，则删除文件
+        File::delete_file(it->second.data());
+        //删除这条记录
+        it = _log_file_map.erase(it);
+    }
+}
+
+void FileChannel::setMaxDay(int max_day){
+    _log_max_day = max_day > 1 ? max_day : 1;
+}
 
 
 } /* namespace toolkit */

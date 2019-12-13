@@ -93,6 +93,14 @@ int sip_uas_transaction_handler(struct sip_uas_transaction_t* t, struct sip_dial
 	{
 		return sip_uas_onbye(t, dialog, req);
 	}
+	else if (0 == cstrcasecmp(&req->u.c.method, SIP_METHOD_PRACK))
+	{
+		return sip_uas_onprack(t, dialog, req);
+	}
+	else if (0 == cstrcasecmp(&req->u.c.method, SIP_METHOD_UPDATE))
+	{
+		return sip_uas_onupdate(t, dialog, req);
+	}
 	else if (0 == cstrcasecmp(&req->u.c.method, SIP_METHOD_REGISTER))
 	{
 		return sip_uas_onregister(t, req);
@@ -101,9 +109,29 @@ int sip_uas_transaction_handler(struct sip_uas_transaction_t* t, struct sip_dial
 	{
 		return sip_uas_onoptions(t, req);
 	}
+	else if (0 == cstrcasecmp(&req->u.c.method, SIP_METHOD_SUBSCRIBE))
+	{
+		return sip_uas_onsubscribe(t, dialog, req);
+	}
+	else if (0 == cstrcasecmp(&req->u.c.method, SIP_METHOD_NOTIFY))
+	{
+		return sip_uas_onnotify(t, req);
+	}
+	else if (0 == cstrcasecmp(&req->u.c.method, SIP_METHOD_PUBLISH))
+	{
+		return sip_uas_onpublish(t, req);
+	}
 	else if (0 == cstrcasecmp(&req->u.c.method, SIP_METHOD_MESSAGE))
 	{
-		return t->handler->onrequest(t->param, req, t, dialog, req->payload, req->size);
+		return t->handler->onmessage ? t->handler->onmessage(t->param, req, t, dialog, req->payload, req->size) : 0;
+	}
+	else if (0 == cstrcasecmp(&req->u.c.method, SIP_METHOD_INFO))
+    {
+        return sip_uas_oninfo(t, dialog, req);
+    }
+	else if (0 == cstrcasecmp(&req->u.c.method, SIP_METHOD_REFER))
+	{
+		return sip_uas_onrefer(t, dialog, req);
 	}
 	else
 	{
@@ -115,7 +143,6 @@ int sip_uas_transaction_handler(struct sip_uas_transaction_t* t, struct sip_dial
 
 int sip_uas_transaction_dosend(struct sip_uas_transaction_t* t)
 {
-	int r;
 	const struct sip_via_t *via;
 
 	assert(t->size > 0);
@@ -133,10 +160,7 @@ int sip_uas_transaction_dosend(struct sip_uas_transaction_t* t)
 	via = sip_vias_get(&t->reply->vias, 0);
 	if (!via) return -1; // invalid via
 
-	r = t->handler->send(t->param, cstrvalid(&via->received) ? &via->received : &via->host, t->data, t->size);
-	if (r >= 0)
-		t->reliable = r;
-	return r;
+	return t->handler->send(t->param, cstrvalid(&via->received) ? &via->received : &via->host, t->data, t->size);
 }
 
 int sip_uas_transaction_terminated(struct sip_uas_transaction_t* t)

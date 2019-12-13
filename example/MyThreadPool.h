@@ -14,8 +14,8 @@ public:
         static MyThreadPool instance;
         return instance;
     }
-    void Start(int num1,int num2){
-        workerPool = std::make_shared<erizo::ThreadPool>(num1);
+    void Start(int nPhtreadNum){
+        workerPool = std::make_shared<erizo::ThreadPool>(nPhtreadNum);
         workerPool->start();
     }
     std::shared_ptr<erizo::ThreadPool> GetThreadPool(){return workerPool;}

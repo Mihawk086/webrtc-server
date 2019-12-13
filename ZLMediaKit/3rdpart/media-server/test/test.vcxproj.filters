@@ -69,9 +69,6 @@
     <ClInclude Include="..\librtmp\aio\aio-rtmp-transport.h">
       <Filter>librtmp\aio</Filter>
     </ClInclude>
-    <ClInclude Include="..\librtsp\test\rtp-socket.h">
-      <Filter>librtsp</Filter>
-    </ClInclude>
     <ClInclude Include="..\librtsp\test\rtp-udp-transport.h">
       <Filter>librtsp</Filter>
     </ClInclude>
@@ -106,6 +103,18 @@
       <Filter>librtsp\media</Filter>
     </ClInclude>
     <ClInclude Include="..\librtsp\test\media\ps-file-source.h">
+      <Filter>librtsp\media</Filter>
+    </ClInclude>
+    <ClInclude Include="..\librtsp\test\media\vod-file-source.h">
+      <Filter>librtsp\media</Filter>
+    </ClInclude>
+    <ClInclude Include="..\librtsp\test\media\avbuffer.h">
+      <Filter>librtsp\media</Filter>
+    </ClInclude>
+    <ClInclude Include="..\librtsp\test\media\avpacket.h">
+      <Filter>librtsp\media</Filter>
+    </ClInclude>
+    <ClInclude Include="..\librtsp\test\media\mp4-file-reader.h">
       <Filter>librtsp\media</Filter>
     </ClInclude>
   </ItemGroup>
@@ -184,9 +193,6 @@
     </ClCompile>
     <ClCompile Include="..\librtmp\aio\aio-rtmp-transport.c">
       <Filter>librtmp\aio</Filter>
-    </ClCompile>
-    <ClCompile Include="..\librtsp\test\rtp-socket.c">
-      <Filter>librtsp</Filter>
     </ClCompile>
     <ClCompile Include="..\librtsp\test\rtsp-client-test.c">
       <Filter>librtsp</Filter>
@@ -412,6 +418,45 @@
     </ClCompile>
     <ClCompile Include="..\..\sdk\source\random.c">
       <Filter>sdk</Filter>
+    </ClCompile>
+    <ClCompile Include="..\librtmp\test\rtmp-chunk-test.cpp">
+      <Filter>librtmp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\librtmp\test\rtmp-input-test.cpp">
+      <Filter>librtmp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\librtmp\test\rtmp-server-input-test.cpp">
+      <Filter>librtmp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\librtsp\test\media\vod-file-source.cpp">
+      <Filter>librtsp\media</Filter>
+    </ClCompile>
+    <ClCompile Include="..\librtsp\test\media\avbuffer.c">
+      <Filter>librtsp\media</Filter>
+    </ClCompile>
+    <ClCompile Include="..\librtsp\test\media\avpacket.c">
+      <Filter>librtsp\media</Filter>
+    </ClCompile>
+    <ClCompile Include="..\librtsp\test\media\mp4-file-reader.cpp">
+      <Filter>librtsp\media</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\sdk\source\digest\crc32.c">
+      <Filter>sdk</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\sdk\source\port\sysnetconfig.c">
+      <Filter>sdk</Filter>
+    </ClCompile>
+    <ClCompile Include="..\librtp\test\rtp-sender.c">
+      <Filter>librtp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\sdk\source\sockpair.c">
+      <Filter>sdk</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\sdk\libice\test\ice-transport.c">
+      <Filter>libsip</Filter>
+    </ClCompile>
+    <ClCompile Include="..\librtsp\test\sdp-test.cpp">
+      <Filter>librtsp</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

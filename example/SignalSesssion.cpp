@@ -87,7 +87,7 @@ void SignalSesssion::on_Open() {
                                               m_webrtcConn,
                                               stream_id,
                                               stream_label,
-                                              false, nullptr);
+                                              false);
     m_pStream->setVideoSinkSSRC(12345678);
     m_pStream->init(true);
     m_webrtcConn->addMediaStream(m_pStream);
@@ -104,13 +104,6 @@ void SignalSesssion::on_Open() {
     m_remotesdp = std::make_shared<SdpInfo>(rtp_mappings);
     m_webrtctransport.reset(new WebRtcTransport(MyLoop::GetLoop()));
     m_webrtctransport->Start();
-    m_pStream = std::make_shared<MediaStream>(MyThreadPool::GetInstance().GetThreadPool()->getLessUsedWorker(),
-                                              nullptr,
-                                              "1",
-                                              "1",
-                                              false, m_webrtctransport.get());
-    m_pStream->setVideoSinkSSRC(12345678);
-    m_pStream->init(true);
     Send(m_webrtctransport->GetLocalSdp());
     GetZLMedia();
 #endif

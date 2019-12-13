@@ -28,7 +28,6 @@
 #include "rtp/QualityManager.h"
 #include "rtp/PacketBufferService.h"
 
-#include "webrtctransport/WebRtcTransport.h"
 
 namespace erizo {
 
@@ -66,7 +65,7 @@ class MediaStream: public MediaSink, public MediaSource, public FeedbackSink,
    */
   MediaStream(std::shared_ptr<Worker> worker, std::shared_ptr<WebRtcConnection> connection,
       const std::string& media_stream_id, const std::string& media_stream_label,
-      bool is_publisher,WebRtcTransport* tran);
+      bool is_publisher);
   /**
    * Destructor.
    */
@@ -185,7 +184,6 @@ class MediaStream: public MediaSink, public MediaSource, public FeedbackSink,
   uint32_t getRandomValue(uint32_t min, uint32_t max);
 
  private:
-    WebRtcTransport* m_tran = nullptr;
 
   boost::mutex event_listener_mutex_;
   MediaStreamEventListener* media_stream_event_listener_;

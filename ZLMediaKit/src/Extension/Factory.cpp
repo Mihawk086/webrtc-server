@@ -30,18 +30,19 @@
 #include "H264Rtp.h"
 #include "AACRtp.h"
 #include "H265Rtp.h"
+#include "Common/Parser.h"
 
 namespace mediakit{
 
 Track::Ptr Factory::getTrackBySdp(const SdpTrack::Ptr &track) {
     if (strcasecmp(track->_codec.data(), "mpeg4-generic") == 0) {
         string aac_cfg_str = FindField(track->_fmtp.data(), "config=", nullptr);
-        if (aac_cfg_str.size() != 4) {
+        if (aac_cfg_str.empty()) {
             aac_cfg_str = FindField(track->_fmtp.data(), "config=", ";");
         }
-        if (aac_cfg_str.size() != 4) {
-            //延后获取adts头
-            return std::make_shared<AACTrack>();
+        if (aac_cfg_str.empty()) {
+            //如果sdp中获取不到aac config信息，那么在rtp也无法获取，那么忽略该Track
+            return nullptr;
         }
         string aac_cfg;
 
@@ -59,37 +60,32 @@ Track::Ptr Factory::getTrackBySdp(const SdpTrack::Ptr &track) {
     }
 
     if (strcasecmp(track->_codec.data(), "h264") == 0) {
-        string sps_pps = FindField(track->_fmtp.data(), "sprop-parameter-sets=", nullptr);
-        if(sps_pps.empty()){
-            return std::make_shared<H264Track>();
-        }
+        //a=fmtp:96 packetization-mode=1;profile-level-id=42C01F;sprop-parameter-sets=Z0LAH9oBQBboQAAAAwBAAAAPI8YMqA==,aM48gA==
+        auto map = Parser::parseArgs(FindField(track->_fmtp.data()," ", nullptr),";","=");
+        auto sps_pps = map["sprop-parameter-sets"];
         string base64_SPS = FindField(sps_pps.data(), NULL, ",");
         string base64_PPS = FindField(sps_pps.data(), ",", NULL);
-        if(base64_PPS.back() == ';'){
-            base64_PPS.pop_back();
-        }
-
         auto sps = decodeBase64(base64_SPS);
         auto pps = decodeBase64(base64_PPS);
+        if(sps.empty() || pps.empty()){
+            //如果sdp里面没有sps/pps,那么可能在后续的rtp里面恢复出sps/pps
+            return std::make_shared<H264Track>();
+        }
+
         return std::make_shared<H264Track>(sps,pps,0,0);
     }
 
     if (strcasecmp(track->_codec.data(), "h265") == 0) {
         //a=fmtp:96 sprop-sps=QgEBAWAAAAMAsAAAAwAAAwBdoAKAgC0WNrkky/AIAAADAAgAAAMBlQg=; sprop-pps=RAHA8vA8kAA=
-        int pt;
-        char sprop_vps[128] = {0},sprop_sps[128] = {0},sprop_pps[128] = {0};
-        if (4 == sscanf(track->_fmtp.data(), "%d sprop-vps=%127[^;]; sprop-sps=%127[^;]; sprop-pps=%127[^;]", &pt, sprop_vps,sprop_sps, sprop_pps)) {
-            auto vps = decodeBase64(sprop_vps);
-            auto sps = decodeBase64(sprop_sps);
-            auto pps = decodeBase64(sprop_pps);
-            return std::make_shared<H265Track>(vps,sps,pps,0,0,0);
+        auto map = Parser::parseArgs(FindField(track->_fmtp.data()," ", nullptr),";","=");
+        auto vps = decodeBase64(map["sprop-vps"]);
+        auto sps = decodeBase64(map["sprop-sps"]);
+        auto pps = decodeBase64(map["sprop-pps"]);
+        if(sps.empty() || pps.empty()){
+            //如果sdp里面没有sps/pps,那么可能在后续的rtp里面恢复出sps/pps
+            return std::make_shared<H265Track>();
         }
-        if (3 == sscanf(track->_fmtp.data(), "%d sprop-sps=%127[^;]; sprop-pps=%127[^;]", &pt,sprop_sps, sprop_pps)) {
-            auto sps = decodeBase64(sprop_sps);
-            auto pps = decodeBase64(sprop_pps);
-            return std::make_shared<H265Track>("",sps,pps,0,0,0);
-        }
-        return std::make_shared<H265Track>();
+        return std::make_shared<H265Track>(vps,sps,pps,0,0,0);
     }
 
 
@@ -184,6 +180,9 @@ CodecId Factory::getCodecIdByAmf(const AMFValue &val){
         if(str == "mp4a"){
             return CodecAAC;
         }
+        if(str == "hev1" || str == "hvc1"){
+            return CodecH265;
+        }
         WarnL << "暂不支持该Amf:" << str;
         return CodecInvalid;
     }
@@ -191,18 +190,15 @@ CodecId Factory::getCodecIdByAmf(const AMFValue &val){
     if (val.type() != AMF_NULL){
         auto type_id = val.as_integer();
         switch (type_id){
-            case 7:{
-                return CodecH264;
-            }
-            case 10:{
-                return CodecAAC;
-            }
+            case 7: return CodecH264;
+            case 10: return CodecAAC;
+            case 12: return CodecH265;
             default:
                 WarnL << "暂不支持该Amf:" << type_id;
                 return CodecInvalid;
         }
     }else{
-        WarnL << "Metedata不存在相应的Track";
+        WarnL << "Metadata不存在相应的Track";
     }
 
     return CodecInvalid;
@@ -223,14 +219,10 @@ RtmpCodec::Ptr Factory::getRtmpCodecByTrack(const Track::Ptr &track) {
 
 AMFValue Factory::getAmfByCodecId(CodecId codecId) {
     switch (codecId){
-        case CodecAAC:{
-            return AMFValue("mp4a");
-        }
-        case CodecH264:{
-            return AMFValue("avc1");
-        }
-        default:
-            return AMFValue(AMF_NULL);
+        case CodecAAC: return AMFValue("mp4a");
+        case CodecH264: return AMFValue("avc1");
+        case CodecH265: return AMFValue(12);
+        default: return AMFValue(AMF_NULL);
     }
 }
 
