@@ -16,7 +16,7 @@
 
 #include "MyIce/MyLoop.h"
 
-#define TEST 1
+#define USE_ERIZO 0
 
 typedef struct rtp_header
 {
@@ -50,7 +50,7 @@ SignalSesssion::SignalSesssion(boost::asio::io_service *ptr_io_service ,SignalSe
 }
 
 void SignalSesssion::on_Open() {
-#if TEST
+#if USE_ERIZO
     websocket_server::connection_ptr conn = m_server->GetServer()->get_con_from_hdl(m_hdl);
     std::cout << conn->get_uri()->str()  << " : " << conn->get_uri()->get_resource() << " - "<< conn->get_remote_endpoint() << std::endl;
 
@@ -62,7 +62,7 @@ void SignalSesssion::on_Open() {
     cfg.ice_components = 1;
     cfg.min_port = 50000;
     cfg.max_port = 60000;
-    cfg.transport_name = "test";
+    cfg.transport_name = "USE_ERIZO";
     cfg.use_nicer = true;
     std::vector<RtpMap> rtp_mappings;//you may need to init the mappings
     RtpMap rtpmap;
@@ -80,7 +80,6 @@ void SignalSesssion::on_Open() {
                                                     ext_mappings,
                                                     this);
     m_webrtcConn->init();
-
     std::string stream_id = "1";
     std::string stream_label = "1";
     m_pStream = std::make_shared<MediaStream>(m_webrtcConn->getWorker(),
@@ -114,7 +113,8 @@ void SignalSesssion::on_Close() {
 }
 
 void SignalSesssion::on_Message(websocket_server::message_ptr msg) {
-#if TEST
+#if USE_ERIZO
+	
     std::string str = msg->get_payload();
     Document d;
     if(d.Parse(str.c_str()).HasParseError()){
@@ -149,6 +149,7 @@ void SignalSesssion::on_Message(websocket_server::message_ptr msg) {
 
         return ;
     }
+	
 #else
     std::string str = msg->get_payload();
     Document d;
@@ -164,7 +165,6 @@ void SignalSesssion::on_Message(websocket_server::message_ptr msg) {
         std::string strSdp = m.GetString();
         m_strRemoteSdp = strSdp;
         m_remotesdp->initWithSdp(m_strRemoteSdp,"");
-        //m_pStream->setRemoteSdp(m_remotesdp);
         return ;
     }
 
@@ -177,38 +177,12 @@ void SignalSesssion::notifyEvent(WebRTCEvent newEvent, const std::string &messag
     if(newEvent == CONN_GATHERED ){
         m_webrtcConn->getLocalSdpInfo();
         auto sdp = m_webrtcConn->getLocalSdp();
-        sdp+="a=ssrc:12345678 cname:testvideo\r\n";
+        sdp+="a=ssrc:12345678 cname:USE_ERIZOvideo\r\n";
         //sdp+="a=ssrc:12345678 cname:janusvideo\r\n";
         //sdp+="a=ssrc:12345678 msid:janus janusv0\r\n";
         //sdp+="a=ssrc:12345678 mslabel:janus\r\n";
         //sdp+="a=ssrc:12345678 label:janusa0\r\n";
         Send(sdp);
-/*
-        auto pSdp = m_webrtcConn->getLocalSdpInfoSync();
-        char szsdp[1024 * 10] = { 0 };
-        int nssrc = 12345678;
-        std::string m_strIP = "192.168.0.104";
-        sprintf(szsdp, "v=0\r\no=- 1495799811084970 1495799811084970 IN IP4 %s\r\ns=Streaming Test\r\nt=0 0\r\n"
-                       "a=group:BUNDLE video\r\na=msid-semantic: WMS janus\r\n"
-                       "m=video 1 RTP/SAVPF 96\r\nc=IN IP4 %s\r\na=mid:video\r\na=sendonly\r\na=rtcp-mux\r\n"
-                       "a=ice-ufrag:%s\r\n"
-                       "a=ice-pwd:%s\r\na=ice-options:trickle\r\na=fingerprint:sha-256 %s\r\na=setup:actpass\r\na=connection:new\r\n"
-                       "a=rtpmap:96 H264/90000\r\n"
-                       "a=ssrc:%d cname:janusvideo\r\n"
-                       "a=ssrc:%d msid:janus janusv0\r\n"
-                       "a=ssrc:%d mslabel:janus\r\n"
-                       "a=ssrc:%d label:janusv0\r\n"
-                       "a=candidate:%s 1 udp %u %s %d typ %s\r\n",
-                m_strIP.c_str(), m_strIP.c_str(),
-                pSdp->getUsername(VIDEO_TYPE).c_str(), pSdp->getPassword(VIDEO_TYPE).c_str(),
-                pSdp->fingerprint.c_str(),
-                nssrc, nssrc, nssrc, nssrc,
-                "1", 12345678, m_strIP.c_str(), 9500,
-                "host"
-        );
-        std::string strSdp = szsdp;
-        Send(strSdp);
-        */
     }
     if(newEvent == CONN_READY){
         GetZLMedia();
@@ -254,10 +228,10 @@ void SignalSesssion::GetZLMedia() {
                     header->ssrc = htonl(12345678);
                     dp->comp = 1;
                     dp->type = VIDEO_PACKET;
-#if TEST
+#if USE_ERIZO
                     m_pStream->deliverVideoData(dp);
+					//m_webrtcConn->write(dp);
 #else
-                    //m_pStream->deliverVideoData(dp);
                     m_webrtctransport->WritRtpPacket(dp->data,dp->length);
 #endif
                 }

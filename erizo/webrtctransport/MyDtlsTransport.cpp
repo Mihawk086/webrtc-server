@@ -7,9 +7,13 @@
 using namespace erizo;
 using dtls::DtlsSocketContext;
 
-MyDtlsTransport::MyDtlsTransport() {
+MyDtlsTransport::MyDtlsTransport(bool bServer):m_bServer(bServer) {
     m_pDtls.reset(new DtlsSocketContext());
-    m_pDtls->createServer();
+	if (bServer) {
+		m_pDtls->createServer();
+	}else{
+		m_pDtls->createClient();
+	}
     m_pDtls->setDtlsReceiver(this);
 }
 
@@ -19,7 +23,9 @@ MyDtlsTransport::~MyDtlsTransport() {
 
 
 void MyDtlsTransport::Start() {
-    //m_pDtls->start();
+	if (!m_bServer) {
+		m_pDtls->start();
+	}
 }
 
 void MyDtlsTransport::Close() {
@@ -28,6 +34,10 @@ void MyDtlsTransport::Close() {
 
 void MyDtlsTransport::onHandshakeCompleted(dtls::DtlsSocketContext *ctx, std::string clientKey, std::string serverKey,
                                            std::string srtp_profile) {
+	if (m_bServer) {
+		// If we are server, we swap the keys
+		clientKey.swap(serverKey);
+	}
     if(m_HandshakeCompletedCB){
         m_HandshakeCompletedCB(clientKey,serverKey);
     }

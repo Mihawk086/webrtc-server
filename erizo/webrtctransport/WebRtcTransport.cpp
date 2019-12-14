@@ -9,9 +9,9 @@ using namespace erizo;
 
 WebRtcTransport::WebRtcTransport(xop::EventLoop *loop)
         :m_loop(loop),m_bReady(false){
-    m_strIP = "192.168.0.102";
+    m_strIP = "192.168.127.128";
     m_nPort = 9500;
-    m_pDtlsTransport.reset(new MyDtlsTransport());
+    m_pDtlsTransport.reset(new MyDtlsTransport(true));
     m_pUdpSocket.reset(new UdpSocket(m_strIP,m_nPort,loop));
     m_Srtp.reset(new SrtpChannel());
     m_IceServer.reset(new IceServer(Utils::Crypto::GetRandomString(4), Utils::Crypto::GetRandomString(24)));
@@ -37,7 +37,7 @@ WebRtcTransport::~WebRtcTransport() {
 }
 
 void WebRtcTransport::Start() {
-    m_pDtlsTransport->Start();
+ 
 }
 
 std::string WebRtcTransport::GetLocalSdp() {
@@ -66,6 +66,7 @@ std::string WebRtcTransport::GetLocalSdp() {
 
 void WebRtcTransport::OnIceServerCompleted() {
     m_RemoteSockaddr = *m_IceServer->GetSelectAddr();
+	m_pDtlsTransport->Start();
 }
 
 void WebRtcTransport::OnDtlsCompleted(std::string clientKey, std::string serverKey) {

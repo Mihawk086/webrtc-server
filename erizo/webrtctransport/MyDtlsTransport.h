@@ -18,7 +18,7 @@ namespace erizo {
     public:
         typedef std::shared_ptr<MyDtlsTransport>  Ptr ;
 
-        MyDtlsTransport();
+        MyDtlsTransport(bool bServer);
         ~MyDtlsTransport();
 
         void Start();
@@ -39,10 +39,10 @@ namespace erizo {
         void SetOutPutCB(std::function<void(char* buf, int len)> cb){m_OutPutCB = cb;}
     private:
         std::shared_ptr<dtls::DtlsSocketContext> m_pDtls;
-        bool m_bServer;
         std::function<void(std::string clientKey, std::string serverKey)> m_HandshakeCompletedCB;
         std::function<void()> m_HandshakeFailedCB;
         std::function<void(char* buf, int len)> m_OutPutCB;
+		bool m_bServer = false;
     };
 }
 
