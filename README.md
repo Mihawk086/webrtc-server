@@ -1,6 +1,6 @@
 # webrtc-server
-** webrtc流媒体服务器  
-** 基于licode的erizo改造  
+* webrtc流媒体服务器  
+* 基于licode的erizo改造  
 
 # 依赖库
 ```  
