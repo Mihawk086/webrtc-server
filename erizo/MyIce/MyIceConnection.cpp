@@ -9,10 +9,10 @@ using namespace erizo;
 erizo::MyIceConnection::MyIceConnection(xop::EventLoop *loop,IceConfig& ice_config)
 :IceConnection(ice_config),m_loop(loop)
 {
-    m_strIp = "192.168.127.128";
-    m_nPort = 9500;
+    m_strIp = ice_config.network_interface;
+    m_nPort = -1;
     m_ice_server.reset(new IceServer(Utils::Crypto::GetRandomString(4), Utils::Crypto::GetRandomString(24)));
-    m_udp_socket.reset(new UdpSocket(m_strIp,m_nPort,loop));
+    m_udp_socket.reset(new UdpSocket(m_strIp,loop));
 
     m_udp_socket->setReadCallback([this](char* buf, int len, struct sockaddr_in* remoteAddr) {
         this->OnPacketReceived(buf,len, remoteAddr);
@@ -34,6 +34,10 @@ erizo::MyIceConnection::~MyIceConnection() {
 }
 
 void erizo::MyIceConnection::start() {
+
+    m_udp_socket->Start();
+    m_nPort = m_udp_socket->GetPort();
+
     CandidateInfo cand_info;
     cand_info.componentId = 1;
     cand_info.foundation = "123";

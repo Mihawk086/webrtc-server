@@ -31,14 +31,16 @@ link_directories(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/lib)
 #boost
 find_package(Boost REQUIRED COMPONENTS regex filesystem thread system)
 
-
 # LOG4CXX
 find_library(LOG log4cxx)
 test_lib(${LOG})
 
+#muduo_net
+file(GLOB NET_SRC ${CMAKE_CURRENT_SOURCE_DIR}/net/*.cpp)
+add_library(net STATIC ${NET_SRC})
+
 add_subdirectory(erizo)
 add_subdirectory(webrtc/src)
 add_subdirectory(ZLMediaKit)
-add_subdirectory(rtsp)
 add_subdirectory(example)
 

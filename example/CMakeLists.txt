@@ -10,4 +10,4 @@ set(RTC_LINK_LIBRARYS erizo webrtc
 
 add_executable(testWebRtc testWebRtc.cpp SignalServer.cpp SignalServer.h SignalSesssion.cpp SignalSesssion.h MyThreadPool.h FFmpegSrc.cpp FFmpegSrc.h)
 
-target_link_libraries(testWebRtc erizo ${RTC_LINK_LIBRARYS} zlmediakit)
+target_link_libraries(testWebRtc  ${RTC_LINK_LIBRARYS} zlmediakit)

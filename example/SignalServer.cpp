@@ -3,6 +3,7 @@
 //
 
 #include "SignalServer.h"
+#include <websocketpp/common/asio.hpp>
 
 SignalServer::SignalServer(boost::asio::io_service *ptr_io_service, uint16_t port)
 :m_iPort(port),m_ioservice(ptr_io_service){

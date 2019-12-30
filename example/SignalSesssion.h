@@ -26,7 +26,6 @@
 #include "Player/PlayerProxy.h"
 #include "Common/MediaSource.h"
 
-#include "webrtctransport/WebRtcTransport.h"
 
 using namespace erizo;
 
@@ -54,11 +53,10 @@ public:
     void TaskInLoop(std::function<void()> func);
 
 private:
-    std::shared_ptr<WebRtcTransport> m_webrtctransport;
+
     std::shared_ptr<WebRtcConnection> m_webrtcConn;
     std::shared_ptr<MediaStream> m_pStream;
     connection_hdl m_hdl;
-    //RingBuffer<RtpPacket::Ptr>::RingReader::Ptr reader;
     std::string m_strRemoteSdp;
     SignalServer* m_server;
     boost::asio::io_service* m_ioservice;

@@ -59,7 +59,7 @@ namespace erizo {
         std::shared_ptr<UdpSocket> m_udp_socket;
         xop::EventLoop *m_loop;
         std::string m_strIp;
-        int16_t  m_nPort;
+        uint16_t  m_nPort;
         struct sockaddr_in m_remoteAddr;
     };
 

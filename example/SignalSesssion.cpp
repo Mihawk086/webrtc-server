@@ -15,8 +15,8 @@
 #include "Common/MediaSource.h"
 
 #include "MyIce/MyLoop.h"
+#include "net/NetInterface.h"
 
-#define USE_ERIZO 0
 
 typedef struct rtp_header
 {
@@ -50,20 +50,13 @@ SignalSesssion::SignalSesssion(boost::asio::io_service *ptr_io_service ,SignalSe
 }
 
 void SignalSesssion::on_Open() {
-#if USE_ERIZO
     websocket_server::connection_ptr conn = m_server->GetServer()->get_con_from_hdl(m_hdl);
     std::cout << conn->get_uri()->str()  << " : " << conn->get_uri()->get_resource() << " - "<< conn->get_remote_endpoint() << std::endl;
 
     std::string connid = "1";
     IceConfig cfg;//you may need init the cfg value
-    cfg.network_interface = "localhost";
-    cfg.media_type = VIDEO_TYPE;
-    cfg.connection_id = 1;
-    cfg.ice_components = 1;
-    cfg.min_port = 50000;
-    cfg.max_port = 60000;
-    cfg.transport_name = "USE_ERIZO";
-    cfg.use_nicer = true;
+
+    cfg.network_interface = xop::NetInterface::getLocalIPAddress();
     std::vector<RtpMap> rtp_mappings;//you may need to init the mappings
     RtpMap rtpmap;
     rtpmap.clock_rate = 90000;
@@ -91,21 +84,6 @@ void SignalSesssion::on_Open() {
     m_pStream->init(true);
     m_webrtcConn->addMediaStream(m_pStream);
     m_webrtcConn->createOffer(true,false, true);
-#else
-    std::vector<RtpMap> rtp_mappings;
-    RtpMap rtpmap;
-    rtpmap.clock_rate = 90000;
-    rtpmap.media_type =VIDEO_TYPE;
-    rtpmap.payload_type = 96;
-    rtpmap.encoding_name = "H264";
-    rtpmap.channels = 1;
-    rtp_mappings.push_back(rtpmap);
-    m_remotesdp = std::make_shared<SdpInfo>(rtp_mappings);
-    m_webrtctransport.reset(new WebRtcTransport(MyLoop::GetLoop()));
-    m_webrtctransport->Start();
-    Send(m_webrtctransport->GetLocalSdp());
-    GetZLMedia();
-#endif
 }
 
 void SignalSesssion::on_Close() {
@@ -113,8 +91,7 @@ void SignalSesssion::on_Close() {
 }
 
 void SignalSesssion::on_Message(websocket_server::message_ptr msg) {
-#if USE_ERIZO
-	
+
     std::string str = msg->get_payload();
     Document d;
     if(d.Parse(str.c_str()).HasParseError()){
@@ -149,26 +126,6 @@ void SignalSesssion::on_Message(websocket_server::message_ptr msg) {
 
         return ;
     }
-	
-#else
-    std::string str = msg->get_payload();
-    Document d;
-    if(d.Parse(str.c_str()).HasParseError()){
-        printf("parse error!\n");
-    }
-    if(!d.IsObject()){
-        printf("should be an object!\n");
-        return ;
-    }
-    if(d.HasMember("sdp")){
-        Value &m = d["sdp"];
-        std::string strSdp = m.GetString();
-        m_strRemoteSdp = strSdp;
-        m_remotesdp->initWithSdp(m_strRemoteSdp,"");
-        return ;
-    }
-
-#endif
 }
 
 void SignalSesssion::notifyEvent(WebRTCEvent newEvent, const std::string &message) {
@@ -228,12 +185,10 @@ void SignalSesssion::GetZLMedia() {
                     header->ssrc = htonl(12345678);
                     dp->comp = 1;
                     dp->type = VIDEO_PACKET;
-#if USE_ERIZO
+
                     m_pStream->deliverVideoData(dp);
 					//m_webrtcConn->write(dp);
-#else
-                    m_webrtctransport->WritRtpPacket(dp->data,dp->length);
-#endif
+
                 }
             });
             m_reader = reader;
